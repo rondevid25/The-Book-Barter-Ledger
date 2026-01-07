@@ -103,7 +103,7 @@ with tab_reg:
         book_title = st.text_input("Book Title")
         author = st.text_input("Author Name")
         
-        if st.button("Confirm Registration"):
+        if st.button("Confirm Lending"):
             final_l_name = existing_l_name if existing_l_name else l_name
             final_b_name = existing_b_name if existing_b_name else b_name
             
