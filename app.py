@@ -2,7 +2,7 @@ import streamlit as st
 import gspread
 from datetime import datetime
 import uuid
-from tracker import show_tracking_page  # Importing the tracking logic from our separate file
+from tracker import show_tracking_page  
 
 # --- 0. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -11,23 +11,20 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Shared CSS for both tabs (Theme consistency)
+# Shared CSS for both tabs
 st.markdown("""
     <style>
-    /* Ensure text is visible in disabled input boxes */
     input:disabled {
         -webkit-text-fill-color: #FFFFFF !important;
         color: #FFFFFF !important;
         background-color: #31333F !important;
         opacity: 1 !important;
     }
-    /* Mobile-friendly button styling */
     .stButton>button {
         width: 100%;
         border-radius: 8px;
         height: 3em;
     }
-    /* Metric boxes for the tracking page */
     .metric-box {
         padding: 15px;
         border-radius: 10px;
@@ -39,19 +36,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. DATABASE CONNECTION ---
+# --- 1. DATABASE CONNECTION (EXCLUSIVELY FOR CLOUD) ---
 try:
-    gc = gspread.service_account(filename='creds.json')
+    # We explicitly convert the TOML secret to a Python Dictionary
+    # This prevents gspread from looking for a local file
+    creds_info = st.secrets["gcp_service_account"]
+    creds_dict = dict(creds_info) 
+    
+    gc = gspread.service_account_from_dict(creds_dict)
+    
     spreadsheet = gc.open("BTC: The Book Barter ledger")
     ledger_sh = spreadsheet.get_worksheet(0)
     members_sh = spreadsheet.worksheet("Members")
 except Exception as e:
-    st.error(f"Failed to connect to Google Sheets: {e}")
+    st.error(f"Failed to connect to Google Sheets Cloud: {e}")
     st.stop()
 
 # --- 2. REGISTRATION UTILITY ---
 def get_member_names():
-    """Fetches name dictionary for the auto-fill feature."""
     try:
         data = members_sh.get_all_records()
         return {str(row.get('Phone', '')).strip(): str(row.get('Name', '')).strip() 
@@ -75,9 +77,7 @@ with tab_reg:
         st.title("Lent a book?")
         st.write("Fill this form after you've handed over the book.")
         
-        # Get registry for auto-locking names
         member_dir = get_member_names()
-        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -104,25 +104,21 @@ with tab_reg:
         author = st.text_input("Author Name")
         
         if st.button("Confirm Registration"):
-            # Use found name if available, otherwise use input
             final_l_name = existing_l_name if existing_l_name else l_name
             final_b_name = existing_b_name if existing_b_name else b_name
             
             if all([l_phone, final_l_name, b_phone, final_b_name, book_title]):
-                if len(l_phone) == 10 and len(b_phone) == 10 and deposit.isdigit():
-                    # Generate ID and save
+                if len(l_phone) == 10 and len(b_phone) == 10 and (not deposit or deposit.isdigit()):
                     entry_id = str(uuid.uuid4())[:8]
-                    timestamp = datetime.now().strftime("%d-%m-%Y %H:%M")
+                    timestamp = datetime.now().strftime("%d-%m-%Y")
                     
                     new_row = [
                         l_phone, final_l_name, b_phone, final_b_name, 
-                        book_title, author, deposit, "Lent", 
+                        book_title, author, deposit if deposit else "0", "Lent", 
                         timestamp, entry_id
                     ]
                     
                     ledger_sh.append_row(new_row)
-                    
-                    # Store state for success page
                     st.session_state.last_book = book_title
                     st.session_state.last_borrower = final_b_name
                     st.session_state.submitted = True
@@ -134,7 +130,6 @@ with tab_reg:
 
 # --- TAB 2: TRACKING PAGE ---
 with tab_track:
-    # This calls the logic from your tracker.py file
     show_tracking_page(ledger_sh, members_sh)
 
 # Footer
